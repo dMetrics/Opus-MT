@@ -37,14 +37,16 @@ class ContentProcessor():
 
         # TODO: should we have support for other sentence splitters?
         # print("start pre- and post-processing tools")
-        self.sentence_splitter = MosesSentenceSplitter(srclang)
+        # additional options more and even_more to split chinese texts
+        self.sentence_splitter = MosesSentenceSplitter(srclang, more=True, even_more=True)
         self.normalizer = MosesPunctuationNormalizer(srclang)
         if self.bpe_source:
             self.tokenizer = MosesTokenizer(srclang)
             self.detokenizer = MosesDetokenizer(targetlang)
 
     def preprocess(self, srctxt):
-        sentSource = self.sentence_splitter([self.normalizer(srctxt)])
+        normalized_text = '\n'.join(self.normalizer(line) for line in srctxt.split('\n'))   # normalizer do not accept '\n'
+        sentSource = self.sentence_splitter([normalized_text])
         self.sentences=[]
         for s in sentSource:
             if self.tokenizer:
