@@ -47,10 +47,18 @@ class TranslatorWorker():
         self.port = port
         self.configuration = configuration
         self.ws_url = "ws://{}:{}/translate".format(host, port)
+        self.starting = False
         self.run()
 
     @gen.coroutine
     def run(self):
+        if not self.starting:
+            self.starting = True
+        else:
+            while self.starting:
+                time.sleep(3)
+            return
+
         process.Subprocess.initialize()
         self.p = process.Subprocess(['marian-server', '-c',
                                      self.configuration,
@@ -58,24 +66,35 @@ class TranslatorWorker():
                                      '--allow-unk',
                                      # enables translation with a mini-batch size of 64, i.e. translating 64 sentences at once, with a beam-size of 6.
                                      '-b', '6',
-                                     '--mini-batch', '64',
+                                     '--mini-batch', '16',
                                      # use a length-normalization weight of 0.6 (this usually increases BLEU a bit).
                                      '--normalize', '0.6',
                                      '--maxi-batch-sort', 'src',
-                                     '--maxi-batch', '100',
+                                     '--maxi-batch', '32',
+                                     '--log-level', 'info',
+                                     '-w', '1000',
                                       ])
+
         self.p.set_exit_callback(self.on_exit)
+        while not self.ready():
+            time.sleep(3)
+        self.starting = False
         ret = yield self.p.wait_for_exit()
 
     def on_exit(self):
         print("Process exited")
 
     def translate(self, sentences):
-        ws = websocket.create_connection(self.ws_url)
-        ws.send(sentences)
-        translatedSentences = ws.recv().split('\n')
-        ws.close()
-        return translatedSentences
+        if not self.ready():
+            self.run()
+        try:
+            ws = websocket.create_connection(self.ws_url)
+            ws.send(sentences)
+            translatedSentences = ws.recv().split('\n')
+            ws.close()
+            return translatedSentences
+        except Exception as e:
+            print(e)
 
     def ready(self):
         try:

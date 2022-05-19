@@ -45,7 +45,14 @@ class ContentProcessor():
             self.detokenizer = MosesDetokenizer(targetlang)
 
     def preprocess(self, srctxt):
-        normalized_text = '\n'.join(self.normalizer(line) for line in srctxt.split('\n'))   # normalizer do not accept '\n'
+        lines = []
+        for line in srctxt.split('\n'):
+            normalized = self.normalizer(line)
+            if type(normalized) == list:
+                lines.extend(normalized)
+            else:
+                lines.append(normalized)
+        normalized_text = '\n'.join(lines)   # normalizer do not accept '\n'
         sentSource = self.sentence_splitter([normalized_text])
         self.sentences=[]
         for s in sentSource:
