@@ -5,6 +5,8 @@ import sys
 import time
 import json
 import argparse
+
+import signal
 import websocket
 from tornado import web, ioloop, queues, gen, process
 from content_processor import ContentProcessor
@@ -196,7 +198,20 @@ def make_app(args):
     return application
 
 
+class GracefulKiller:
+
+    def __init__(self):
+        signal.signal(signal.SIGINT, self.exit_gracefully)
+        signal.signal(signal.SIGTERM, self.exit_gracefully)
+
+    @staticmethod
+    def exit_gracefully(*args):
+        print("Catch SIGTERM!")
+        sys.exit()
+
+
 if __name__ == "__main__":
+    killer = GracefulKiller()
     parser = argparse.ArgumentParser(
         description='Marian MT translation server.')
     parser.add_argument('-p', '--port', type=int, default=8888,
