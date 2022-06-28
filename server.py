@@ -28,6 +28,10 @@ class TranslatorInterface():
         # becomes nonempty if there are multiple target languages
         self.preamble = ""
 
+    def translate_multiline(self, text):
+        lines = text.split("\n")
+        return '\n'.join(map(self.translate, lines))
+
     def translate(self, text):
         sentences = self.contentprocessor.preprocess(text)
         translatedSentences = self.worker.translate(self.preamble + '\n'.join(sentences))
@@ -142,7 +146,7 @@ class ApiHandler(web.RequestHandler):
                 dict(error="Language pair {} not suppported".format(lang_pair)))
             return
         self.worker = self.worker_pool[lang_pair]
-        translation = self.worker.translate(self.args['source'])
+        translation = self.worker.translate_multiline(self.args['source'])
         self.write(dict(translation=translation))
 
 
