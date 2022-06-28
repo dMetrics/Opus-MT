@@ -30,7 +30,11 @@ class TranslatorInterface():
 
     def translate_multiline(self, text):
         lines = text.split("\n")
-        return '\n'.join(map(self.translate, lines))
+
+        def translate_nonempty_line(line):
+            return self.translate(line) if line.strip() else line
+
+        return '\n'.join(map(translate_nonempty_line, lines))
 
     def translate(self, text):
         sentences = self.contentprocessor.preprocess(text)
