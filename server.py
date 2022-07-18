@@ -37,9 +37,9 @@ class TranslatorInterface():
         return '\n'.join(map(translate_nonempty_line, lines))
 
     def translate(self, text):
-        sentences = self.contentprocessor.preprocess(text)
+        sentences, nl_indices = self.contentprocessor.preprocess(text)
         translatedSentences = self.worker.translate(self.preamble + '\n'.join(sentences))
-        translation = self.contentprocessor.postprocess(translatedSentences)
+        translation = self.contentprocessor.postprocess(translatedSentences, nl_indices)
         return ' '.join(translation)
 
     def ready(self):
@@ -74,15 +74,16 @@ class TranslatorWorker():
                                      self.configuration,
                                      '-p', self.port,
                                      '--allow-unk',
+                                     '--allow-special',
                                      # enables translation with a mini-batch size of 64, i.e. translating 64 sentences at once, with a beam-size of 6.
                                      '-b', '6',
-                                     '--mini-batch', '16',
+                                     '--mini-batch', '64',
                                      # use a length-normalization weight of 0.6 (this usually increases BLEU a bit).
                                      '--normalize', '0.6',
                                      '--maxi-batch-sort', 'src',
-                                     '--maxi-batch', '32',
+                                     '--maxi-batch', '128',
                                      '--log-level', 'info',
-                                     '-w', '1000',
+                                     '-w', '3000',
                                       ])
 
         self.p.set_exit_callback(self.on_exit)
@@ -150,7 +151,8 @@ class ApiHandler(web.RequestHandler):
                 dict(error="Language pair {} not suppported".format(lang_pair)))
             return
         self.worker = self.worker_pool[lang_pair]
-        translation = self.worker.translate_multiline(self.args['source'])
+        translation = self.worker.translate(self.args['source'])
+        # translation = self.worker.translate_multiline(self.args['source'])
         self.write(dict(translation=translation))
 
 

@@ -1,11 +1,39 @@
+import re
+
+from ucenum import ucenum
+from ucinfo import ucinfo
 
 from apply_bpe import BPE
 from mosestokenizer import MosesSentenceSplitter, MosesPunctuationNormalizer, MosesTokenizer, MosesDetokenizer
 import sentencepiece
 
+UNICODE_TERMINATORS = "".join(
+    c.printable for c in map(ucinfo, ucenum('P'))
+    if c.printable != '.' and c.name.endswith("FULL STOP")
+    or "INVERTED" not in c.name and
+    ("QUESTION MARK" in c.name or "EXCLAMATION MARK" in c.name)
+)
+
+
+class SentSplitHelper:
+
+    @staticmethod
+    def split(sentences):
+        result = []
+        for s in sentences:
+            parts = re.split(f'([{UNICODE_TERMINATORS}])', s)
+            if len(parts) == 1:
+                result.append(s)
+            else:
+                if len(parts) % 2 > 0:
+                    parts.append(".")
+                for new_s, term in zip(parts[:-1:2], parts[1::2]):
+                    result.append(new_s + term)
+        return result
+
+
 class ContentProcessor():
-    def __init__(self,  srclang,
-            targetlang, sourcebpe=None, targetbpe=None,sourcespm=None,targetspm=None):
+    def __init__(self,  srclang, targetlang, sourcebpe=None, targetbpe=None,sourcespm=None,targetspm=None):
         self.bpe_source = None
         self.bpe_target = None
         self.sp_processor_source = None
@@ -38,7 +66,8 @@ class ContentProcessor():
         # TODO: should we have support for other sentence splitters?
         # print("start pre- and post-processing tools")
         # additional options more and even_more to split chinese texts
-        self.sentence_splitter = MosesSentenceSplitter(srclang, more=True, even_more=True)
+        self.sentence_splitter = MosesSentenceSplitter(srclang, more=True)
+        self.sentence_splitter_helper = SentSplitHelper()
         self.normalizer = MosesPunctuationNormalizer(srclang)
         if self.bpe_source:
             self.tokenizer = MosesTokenizer(srclang)
@@ -48,13 +77,20 @@ class ContentProcessor():
         lines = []
         for line in srctxt.split('\n'):
             normalized = self.normalizer(line)
-            if type(normalized) == list:
-                lines.extend(normalized)
-            else:
-                lines.append(normalized)
-        normalized_text = '\n'.join(lines)   # normalizer do not accept '\n'
-        sentSource = self.sentence_splitter([normalized_text])
-        self.sentences=[]
+            if not (type(normalized) == list):
+                normalized = [normalized]
+            split = self.sentence_splitter(normalized)
+            split = self.sentence_splitter_helper.split(split)
+            split[len(split) - 1] = split[len(split) - 1] + "\n"
+            lines.extend(split)
+        # normalized_text = '\n'.join(lines)   # normalizer do not accept '\n'
+        nl_positions = []
+        for s in lines:
+            if "\n" in s:
+                nl_positions.append(lines.index(s))
+        sentSource = lines
+
+        self.sentences = []
         for s in sentSource:
             if self.tokenizer:
                 # print('raw sentence: ' + s, flush=True)
@@ -68,9 +104,9 @@ class ContentProcessor():
             else:
                 raise RuntimeError("No tokenization / segmentation method defines, can't preprocess")
             self.sentences.append(segmented)
-        return self.sentences
+        return self.sentences, nl_positions
 
-    def postprocess(self, recievedsentences):
+    def postprocess(self, recievedsentences, nl_indices=None):
         sentTranslated = []
         for index, s in enumerate(recievedsentences):
             received = s.strip().split(' ||| ')
@@ -103,4 +139,7 @@ class ContentProcessor():
                 detokenized = translated
 
             sentTranslated.append(detokenized)
+        if nl_indices:
+            for pos in nl_indices:
+                sentTranslated[pos] = sentTranslated[pos] + "\n"
         return sentTranslated
