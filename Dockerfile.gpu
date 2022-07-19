@@ -60,7 +60,7 @@ WORKDIR /usr/src/app
 RUN set -eux; \
 	git clone https://github.com/dMetrics/marian marian; \
 	cd marian; \
-	git checkout ples-patch-yaml-invalid-node; \
+	git checkout fix-corrupted-validation; \
 	cmake . -DUSE_STATIC_LIBS=on -DCOMPILE_SERVER=on -DUSE_SENTENCEPIECE=on -DCOMPILE_CPU=off -DCOMPILE_CUDA=on \
 	-DCMAKE_BUILD_TYPE=release -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda/ \
 	-DCUDA_INCLUDE_DIRS=/usr/local/cuda/lib64/ ; \

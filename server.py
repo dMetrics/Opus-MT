@@ -43,7 +43,10 @@ class TranslatorInterface():
         return ' '.join(translation)
 
     def ready(self):
-        return self.worker != None and self.worker.ready()
+        ready = self.worker != None and self.worker.ready()
+        if not ready:
+            self.worker.run()
+        return ready
 
     def on_exit(self):
         if self.worker != None:
@@ -77,13 +80,13 @@ class TranslatorWorker():
                                      '--allow-special',
                                      # enables translation with a mini-batch size of 64, i.e. translating 64 sentences at once, with a beam-size of 6.
                                      '-b', '6',
-                                     '--mini-batch', '64',
+                                     '--mini-batch', '8',
                                      # use a length-normalization weight of 0.6 (this usually increases BLEU a bit).
                                      '--normalize', '0.6',
                                      '--maxi-batch-sort', 'src',
-                                     '--maxi-batch', '128',
+                                     '--maxi-batch', '32',
                                      '--log-level', 'info',
-                                     '-w', '3000',
+                                     '-w', '1000',
                                       ])
 
         self.p.set_exit_callback(self.on_exit)
@@ -97,6 +100,7 @@ class TranslatorWorker():
 
     def translate(self, sentences):
         if not self.ready():
+            print("Trying restart worker...")
             self.run()
         try:
             ws = websocket.create_connection(self.ws_url)

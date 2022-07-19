@@ -75,13 +75,14 @@ class ContentProcessor():
 
     def preprocess(self, srctxt):
         lines = []
-        for line in srctxt.split('\n'):
+        split_lines = srctxt.split('\n')
+        for line in split_lines:
             normalized = self.normalizer(line)
             if not (type(normalized) == list):
                 normalized = [normalized]
             split = self.sentence_splitter(normalized)
-            split = self.sentence_splitter_helper.split(split)
-            if split:
+            # split = self.sentence_splitter_helper.split(split)
+            if split and line != split_lines[-1]:
                 split[len(split) - 1] = split[len(split) - 1] + "\n"
             lines.extend(split)
         # normalized_text = '\n'.join(lines)   # normalizer do not accept '\n'
