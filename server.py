@@ -80,12 +80,12 @@ class TranslatorWorker():
                                      '--allow-special',
                                      # enables translation with a mini-batch size of 64, i.e. translating 64 sentences at once, with a beam-size of 6.
                                      '-b', '6',
-                                     '--mini-batch', '8',
+                                     '--mini-batch', '64',
                                      # use a length-normalization weight of 0.6 (this usually increases BLEU a bit).
                                      '--normalize', '0.6',
                                      '--maxi-batch-sort', 'src',
-                                     '--maxi-batch', '32',
-                                     '--log-level', 'info',
+                                     '--maxi-batch', '100',
+                                     '--log-level', 'warn',
                                      '-w', '1000',
                                       ])
 

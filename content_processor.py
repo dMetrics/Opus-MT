@@ -25,10 +25,10 @@ class SentSplitHelper:
             if len(parts) == 1:
                 result.append(s)
             else:
-                if len(parts) % 2 > 0:
-                    parts.append(".")
                 for new_s, term in zip(parts[:-1:2], parts[1::2]):
                     result.append(new_s + term)
+                if len(parts) % 2 > 0:
+                    result.append(parts[-1])
         return result
 
 
@@ -81,7 +81,7 @@ class ContentProcessor():
             if not (type(normalized) == list):
                 normalized = [normalized]
             split = self.sentence_splitter(normalized)
-            # split = self.sentence_splitter_helper.split(split)
+            split = self.sentence_splitter_helper.split(split)
             if split and line != split_lines[-1]:
                 split[len(split) - 1] = split[len(split) - 1] + "\n"
             lines.extend(split)
