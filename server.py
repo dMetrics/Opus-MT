@@ -45,6 +45,7 @@ class TranslatorInterface():
     def ready(self):
         ready = self.worker != None and self.worker.ready()
         if not ready:
+            print("Trying to restart worker..")
             self.worker.run()
         return ready
 
@@ -93,10 +94,12 @@ class TranslatorWorker():
         while not self.ready():
             time.sleep(3)
         self.starting = False
-        ret = yield self.p.wait_for_exit()
 
-    def on_exit(self):
-        print("Process exited")
+        # ret = yield self.p.wait_for_exit()
+
+    def on_exit(self, code):
+        print("Worker process exited: {}, exiting main app...".format(code))
+        GracefulKiller.exit_gracefully()
 
     def translate(self, sentences):
         if not self.ready():
@@ -136,7 +139,7 @@ class ApiHandler(web.RequestHandler):
             if all(map(lambda x: x.ready(), self.worker_pool.values())):
                 self.set_status(204)
             else:
-                self.set_status(500, "Translation server(s) not responding")
+                self.set_status(503, "Translation server(s) not responding")
         elif self.api == 'languages':
             languages = {}
             for source_lang in self.config:
@@ -220,7 +223,7 @@ class GracefulKiller:
 
     @staticmethod
     def exit_gracefully(*args):
-        print("Catch SIGTERM!")
+        print("Exiting gracefully!")
         sys.exit()
 
 
