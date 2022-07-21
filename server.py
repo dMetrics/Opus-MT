@@ -120,6 +120,9 @@ class TranslatorWorker():
             ws.close()
         except ConnectionError:
             return False
+        except Exception as e:
+            print(e)
+            return False
         return True
 
 class ApiHandler(web.RequestHandler):
