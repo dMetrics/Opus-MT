@@ -26,8 +26,9 @@ class SentSplitHelper:
                 result.append(s)
             else:
                 for new_s, term in zip(parts[:-1:2], parts[1::2]):
-                    result.append(new_s + term)
-                if len(parts) % 2 > 0:
+                    sent = new_s + term
+                    result.append(sent.strip())
+                if len(parts) % 2 > 0 and parts[-1].strip():
                     result.append(parts[-1])
         return result
 
@@ -87,9 +88,10 @@ class ContentProcessor():
             lines.extend(split)
         # normalized_text = '\n'.join(lines)   # normalizer do not accept '\n'
         nl_positions = []
-        for s in lines:
-            if "\n" in s:
-                nl_positions.append(lines.index(s))
+
+        for i in range(0, len(lines) - 1):
+            if "\n" in lines[i]:
+                nl_positions.append(i)
         sentSource = lines
 
         self.sentences = []

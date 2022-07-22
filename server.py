@@ -40,7 +40,7 @@ class TranslatorInterface():
         sentences, nl_indices = self.contentprocessor.preprocess(text)
         translatedSentences = self.worker.translate(self.preamble + '\n'.join(sentences))
         translation = self.contentprocessor.postprocess(translatedSentences, nl_indices)
-        return ' '.join(translation)
+        return ' '.join(translation).replace("\n ", "\n")
 
     def ready(self):
         ready = self.worker != None and self.worker.ready()
