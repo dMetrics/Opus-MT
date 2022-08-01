@@ -1,5 +1,7 @@
 import re
 
+import fastBPE
+import sacremoses
 from ucenum import ucenum
 from ucinfo import ucinfo
 
@@ -34,21 +36,26 @@ class SentSplitHelper:
 
 
 class ContentProcessor():
-    def __init__(self,  srclang, targetlang, sourcebpe=None, targetbpe=None,sourcespm=None,targetspm=None):
+    def __init__(self, srclang, targetlang, sourcebpe=None, targetbpe=None, sourcespm=None, targetspm=None,
+                 fast_bpe=False):
         self.bpe_source = None
         self.bpe_target = None
         self.sp_processor_source = None
         self.sp_processor_target = None
         self.sentences=[]
         # load BPE model for pre-processing
-        if sourcebpe:
-            # print("load BPE codes from " + sourcebpe, flush=True)
-            BPEcodes = open(sourcebpe, 'r', encoding="utf-8")
-            self.bpe_source = BPE(BPEcodes)
-        if targetbpe:
-            # print("load BPE codes from " + targetbpe, flush=True)
-            BPEcodes = open(targetbpe, 'r', encoding="utf-8")
-            self.bpe_target = BPE(BPEcodes)
+        if fast_bpe:
+            self.fast_bpe = fastBPE.fastBPE(targetbpe, sourcebpe)
+            self.detruecaser = sacremoses.MosesDetruecaser()
+        else:
+            if sourcebpe:
+                # print("load BPE codes from " + sourcebpe, flush=True)
+                BPEcodes = open(sourcebpe, 'r', encoding="utf-8")
+                self.bpe_source = BPE(BPEcodes)
+            if targetbpe:
+                # print("load BPE codes from " + targetbpe, flush=True)
+                BPEcodes = open(targetbpe, 'r', encoding="utf-8")
+                self.bpe_target = BPE(BPEcodes)
 
         # load SentencePiece model for pre-processing
         if sourcespm:
@@ -70,7 +77,7 @@ class ContentProcessor():
         self.sentence_splitter = MosesSentenceSplitter(srclang, more=True)
         self.sentence_splitter_helper = SentSplitHelper()
         self.normalizer = MosesPunctuationNormalizer(srclang)
-        if self.bpe_source:
+        if self.bpe_source or self.fast_bpe:
             self.tokenizer = MosesTokenizer(srclang)
             self.detokenizer = MosesDetokenizer(targetlang)
 
@@ -100,7 +107,10 @@ class ContentProcessor():
                 # print('raw sentence: ' + s, flush=True)
                 tokenized = ' '.join(self.tokenizer(s))
                 # print('tokenized sentence: ' + tokenized, flush=True)
-                segmented = self.bpe_source.process_line(tokenized)
+                if self.fast_bpe:
+                    segmented = " ".join(self.fast_bpe.apply([tokenized]))
+                else:
+                    segmented = self.bpe_source.process_line(tokenized)
             elif self.sp_processor_source:
                 print('raw sentence: ' + s, flush=True)
                 segmented = ' '.join(self.sp_processor_source.EncodeAsPieces(s))
@@ -117,12 +127,15 @@ class ContentProcessor():
             # print(received, flush=True)
 
             # undo segmentation
-            if self.bpe_source:
-                translated = received[0].replace('@@ ','')
+            if self.fast_bpe:
+                translated = received[0].replace('@@ ', '')
+                translated = translated.strip().strip(' _').strip().replace(' _ ', '-')
+            elif self.bpe_source:
+                translated = received[0].replace('@@ ', '')
             elif self.sp_processor_target:
                 translated = self.sp_processor_target.DecodePieces(received[0].split(' '))
             else:
-                translated = received[0].replace(' ','').replace('▁',' ').strip()
+                translated = received[0].replace(' ', '').replace('▁', ' ').strip()
 
             alignment = ''
             if len(received) == 2:
@@ -137,6 +150,8 @@ class ContentProcessor():
                             fixedLinks.append('-'.join(ids))
                 alignment = ' '.join(fixedLinks)
 
+            if self.detruecaser:
+                translated = " ".join(self.detruecaser.detruecase(translated))
             if self.detokenizer:
                 detokenized = self.detokenizer(translated.split())
             else:

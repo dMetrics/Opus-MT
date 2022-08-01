@@ -22,7 +22,8 @@ class TranslatorInterface():
             sourcebpe=self.service.get('sourcebpe'),
             targetbpe=self.service.get('targetbpe'),
             sourcespm=self.service.get('sourcespm'),
-            targetspm=self.service.get('targetspm')
+            targetspm=self.service.get('targetspm'),
+            fast_bpe=self.service.get('fast_bpe')
         )
         self.worker = model
         # becomes nonempty if there are multiple target languages
