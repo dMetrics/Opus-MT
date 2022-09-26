@@ -43,7 +43,8 @@ class ContentProcessor():
         self.sp_processor_source = None
         self.sp_processor_target = None
         self.fast_bpe = fast_bpe
-        self.sentences=[]
+        self.detruecaser = None
+        self.sentences = []
         # load BPE model for pre-processing
         if fast_bpe:
             self.fast_bpe = fastBPE.fastBPE(targetbpe, sourcebpe)
