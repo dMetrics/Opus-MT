@@ -8,6 +8,7 @@ import argparse
 
 import signal
 import websocket
+import auth
 from tornado import web, ioloop, queues, gen, process
 from content_processor import ContentProcessor
 
@@ -154,6 +155,7 @@ class ApiHandler(web.RequestHandler):
 
             return self.write(dict(languages=languages))
 
+    @auth.api_key_auth
     def post(self):
         self.prepare_args()
         lang_pair = "{}-{}".format(self.args['from'], self.args['to'])
