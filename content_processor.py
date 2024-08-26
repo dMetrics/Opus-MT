@@ -55,7 +55,7 @@ class ContentProcessor():
                 # print('tokenized sentence: ' + tokenized, flush=True)
                 segmented = self.bpe_source.process_line(tokenized)
             elif self.sp_processor_source:
-                print('raw sentence: ' + s, flush=True)
+                # print('raw sentence: ' + s, flush=True)
                 segmented = ' '.join(self.sp_processor_source.EncodeAsPieces(s))
                 # print(segmented, flush=True)
             else:
