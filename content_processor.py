@@ -1,25 +1,63 @@
+import re
+
+import fastBPE
+import sacremoses
+from ucenum import ucenum
+from ucinfo import ucinfo
 
 from apply_bpe import BPE
 from mosestokenizer import MosesSentenceSplitter, MosesPunctuationNormalizer, MosesTokenizer, MosesDetokenizer
 import sentencepiece
 
+UNICODE_TERMINATORS = "".join(
+    c.printable for c in map(ucinfo, ucenum('P'))
+    if c.printable != '.' and c.name.endswith("FULL STOP")
+    or "INVERTED" not in c.name and
+    ("QUESTION MARK" in c.name or "EXCLAMATION MARK" in c.name)
+)
+
+
+class SentSplitHelper:
+
+    @staticmethod
+    def split(sentences):
+        result = []
+        for s in sentences:
+            parts = re.split(f'([{UNICODE_TERMINATORS}])', s)
+            if len(parts) == 1:
+                result.append(s)
+            else:
+                for new_s, term in zip(parts[:-1:2], parts[1::2]):
+                    sent = new_s + term
+                    result.append(sent.strip())
+                if len(parts) % 2 > 0 and parts[-1].strip():
+                    result.append(parts[-1])
+        return result
+
+
 class ContentProcessor():
-    def __init__(self,  srclang,
-            targetlang, sourcebpe=None, targetbpe=None,sourcespm=None,targetspm=None):
+    def __init__(self, srclang, targetlang, sourcebpe=None, targetbpe=None, sourcespm=None, targetspm=None,
+                 fast_bpe=False):
         self.bpe_source = None
         self.bpe_target = None
         self.sp_processor_source = None
         self.sp_processor_target = None
-        self.sentences=[]
+        self.fast_bpe = fast_bpe
+        self.detruecaser = None
+        self.sentences = []
         # load BPE model for pre-processing
-        if sourcebpe:
-            # print("load BPE codes from " + sourcebpe, flush=True)
-            BPEcodes = open(sourcebpe, 'r', encoding="utf-8")
-            self.bpe_source = BPE(BPEcodes)
-        if targetbpe:
-            # print("load BPE codes from " + targetbpe, flush=True)
-            BPEcodes = open(targetbpe, 'r', encoding="utf-8")
-            self.bpe_target = BPE(BPEcodes)
+        if fast_bpe:
+            self.fast_bpe = fastBPE.fastBPE(targetbpe, sourcebpe)
+            self.detruecaser = sacremoses.MosesDetruecaser()
+        else:
+            if sourcebpe:
+                # print("load BPE codes from " + sourcebpe, flush=True)
+                BPEcodes = open(sourcebpe, 'r', encoding="utf-8")
+                self.bpe_source = BPE(BPEcodes)
+            if targetbpe:
+                # print("load BPE codes from " + targetbpe, flush=True)
+                BPEcodes = open(targetbpe, 'r', encoding="utf-8")
+                self.bpe_target = BPE(BPEcodes)
 
         # load SentencePiece model for pre-processing
         if sourcespm:
@@ -38,44 +76,68 @@ class ContentProcessor():
         # TODO: should we have support for other sentence splitters?
         # print("start pre- and post-processing tools")
         # additional options more and even_more to split chinese texts
-        self.sentence_splitter = MosesSentenceSplitter(srclang, more=True, even_more=True)
+        self.sentence_splitter = MosesSentenceSplitter(srclang, more=True)
+        self.sentence_splitter_helper = SentSplitHelper()
         self.normalizer = MosesPunctuationNormalizer(srclang)
-        if self.bpe_source:
+        if self.bpe_source or self.fast_bpe:
             self.tokenizer = MosesTokenizer(srclang)
             self.detokenizer = MosesDetokenizer(targetlang)
 
     def preprocess(self, srctxt):
-        normalized_text = '\n'.join(self.normalizer(line) for line in srctxt.split('\n'))   # normalizer do not accept '\n'
-        sentSource = self.sentence_splitter([normalized_text])
-        self.sentences=[]
+        lines = []
+        split_lines = srctxt.split('\n')
+        for line in split_lines:
+            normalized = self.normalizer(line)
+            if not (type(normalized) == list):
+                normalized = [normalized]
+            split = self.sentence_splitter(normalized)
+            split = self.sentence_splitter_helper.split(split)
+            if split and line != split_lines[-1]:
+                split[len(split) - 1] = split[len(split) - 1] + "\n"
+            lines.extend(split)
+        # normalized_text = '\n'.join(lines)   # normalizer do not accept '\n'
+        nl_positions = []
+
+        for i in range(0, len(lines) - 1):
+            if "\n" in lines[i]:
+                nl_positions.append(i)
+        sentSource = lines
+
+        self.sentences = []
         for s in sentSource:
             if self.tokenizer:
                 # print('raw sentence: ' + s, flush=True)
                 tokenized = ' '.join(self.tokenizer(s))
                 # print('tokenized sentence: ' + tokenized, flush=True)
-                segmented = self.bpe_source.process_line(tokenized)
+                if self.fast_bpe:
+                    segmented = " ".join(self.fast_bpe.apply([tokenized]))
+                else:
+                    segmented = self.bpe_source.process_line(tokenized)
             elif self.sp_processor_source:
-                print('raw sentence: ' + s, flush=True)
+                # print('raw sentence: ' + s, flush=True)
                 segmented = ' '.join(self.sp_processor_source.EncodeAsPieces(s))
                 # print(segmented, flush=True)
             else:
                 raise RuntimeError("No tokenization / segmentation method defines, can't preprocess")
             self.sentences.append(segmented)
-        return self.sentences
+        return self.sentences, nl_positions
 
-    def postprocess(self, recievedsentences):
+    def postprocess(self, recievedsentences, nl_indices=None):
         sentTranslated = []
         for index, s in enumerate(recievedsentences):
             received = s.strip().split(' ||| ')
             # print(received, flush=True)
 
             # undo segmentation
-            if self.bpe_source:
-                translated = received[0].replace('@@ ','')
+            if self.fast_bpe:
+                translated = received[0].replace('@@ ', '')
+                translated = translated.strip().strip(' _').strip().replace(' _ ', '-')
+            elif self.bpe_source:
+                translated = received[0].replace('@@ ', '')
             elif self.sp_processor_target:
                 translated = self.sp_processor_target.DecodePieces(received[0].split(' '))
             else:
-                translated = received[0].replace(' ','').replace('▁',' ').strip()
+                translated = received[0].replace(' ', '').replace('▁', ' ').strip()
 
             alignment = ''
             if len(received) == 2:
@@ -90,10 +152,15 @@ class ContentProcessor():
                             fixedLinks.append('-'.join(ids))
                 alignment = ' '.join(fixedLinks)
 
+            if self.detruecaser:
+                translated = " ".join(self.detruecaser.detruecase(translated))
             if self.detokenizer:
                 detokenized = self.detokenizer(translated.split())
             else:
                 detokenized = translated
 
             sentTranslated.append(detokenized)
+        if nl_indices:
+            for pos in nl_indices:
+                sentTranslated[pos] = sentTranslated[pos] + "\n"
         return sentTranslated

@@ -247,7 +247,7 @@ ${OPUSMT_SERVER}: ${BINDIR}/%: ../%
 # 	pip3 install mosestokenizer==1.0.0
 # 	pip3 install websocket-client==0.46.0
 # endif
-# 	pip3 install mosestokenizer pycld2 sqlitedict
+# 	pip3 install mosestokenizer pycld2
 # 	pip3 install sentencepiece
 
 
