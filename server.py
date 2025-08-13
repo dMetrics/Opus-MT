@@ -5,6 +5,8 @@ import sys
 import time
 import json
 import argparse
+
+import signal
 import websocket
 import auth
 from tornado import web, ioloop, queues, gen, process
@@ -21,20 +23,33 @@ class TranslatorInterface():
             sourcebpe=self.service.get('sourcebpe'),
             targetbpe=self.service.get('targetbpe'),
             sourcespm=self.service.get('sourcespm'),
-            targetspm=self.service.get('targetspm')
+            targetspm=self.service.get('targetspm'),
+            fast_bpe=self.service.get('fast_bpe')
         )
         self.worker = model
         # becomes nonempty if there are multiple target languages
         self.preamble = ""
 
+    def translate_multiline(self, text):
+        lines = text.split("\n")
+
+        def translate_nonempty_line(line):
+            return self.translate(line) if line.strip() else line
+
+        return '\n'.join(map(translate_nonempty_line, lines))
+
     def translate(self, text):
-        sentences = self.contentprocessor.preprocess(text)
+        sentences, nl_indices = self.contentprocessor.preprocess(text)
         translatedSentences = self.worker.translate(self.preamble + '\n'.join(sentences))
-        translation = self.contentprocessor.postprocess(translatedSentences)
-        return ' '.join(translation)
+        translation = self.contentprocessor.postprocess(translatedSentences, nl_indices)
+        return ' '.join(translation).replace("\n ", "\n")
 
     def ready(self):
-        return self.worker != None and self.worker.ready()
+        ready = self.worker != None and self.worker.ready()
+        if not ready:
+            print("Trying to restart worker..")
+            self.worker.run()
+        return ready
 
     def on_exit(self):
         if self.worker != None:
@@ -48,15 +63,24 @@ class TranslatorWorker():
         self.port = port
         self.configuration = configuration
         self.ws_url = "ws://{}:{}/translate".format(host, port)
+        self.starting = False
         self.run()
 
     @gen.coroutine
     def run(self):
+        if not self.starting:
+            self.starting = True
+        else:
+            while self.starting:
+                time.sleep(3)
+            return
+
         process.Subprocess.initialize()
         self.p = process.Subprocess(['marian-server', '-c',
                                      self.configuration,
                                      '-p', self.port,
                                      '--allow-unk',
+                                     '--allow-special',
                                      # enables translation with a mini-batch size of 64, i.e. translating 64 sentences at once, with a beam-size of 6.
                                      '-b', '6',
                                      '--mini-batch', '64',
@@ -64,25 +88,42 @@ class TranslatorWorker():
                                      '--normalize', '0.6',
                                      '--maxi-batch-sort', 'src',
                                      '--maxi-batch', '100',
+                                     '--log-level', 'warn',
+                                     '-w', '1000',
                                       ])
-        self.p.set_exit_callback(self.on_exit)
-        ret = yield self.p.wait_for_exit()
 
-    def on_exit(self):
-        print("Process exited")
+        self.p.set_exit_callback(self.on_exit)
+        while not self.ready():
+            time.sleep(3)
+        self.starting = False
+
+        # ret = yield self.p.wait_for_exit()
+
+    def on_exit(self, code):
+        print("Worker process exited: {}, exiting main app...".format(code))
+        GracefulKiller.exit_gracefully()
 
     def translate(self, sentences):
-        ws = websocket.create_connection(self.ws_url)
-        ws.send(sentences)
-        translatedSentences = ws.recv().split('\n')
-        ws.close()
-        return translatedSentences
+        if not self.ready():
+            print("Trying restart worker...")
+            self.run()
+        try:
+            ws = websocket.create_connection(self.ws_url)
+            ws.send(sentences)
+            translatedSentences = ws.recv().split('\n')
+            ws.close()
+            return translatedSentences
+        except Exception as e:
+            print(e)
 
     def ready(self):
         try:
             ws = websocket.create_connection(self.ws_url)
             ws.close()
         except ConnectionError:
+            return False
+        except Exception as e:
+            print(e)
             return False
         return True
 
@@ -103,7 +144,7 @@ class ApiHandler(web.RequestHandler):
             if all(map(lambda x: x.ready(), self.worker_pool.values())):
                 self.set_status(204)
             else:
-                self.set_status(500, "Translation server(s) not responding")
+                self.set_status(503, "Translation server(s) not responding")
         elif self.api == 'languages':
             languages = {}
             for source_lang in self.config:
@@ -124,6 +165,7 @@ class ApiHandler(web.RequestHandler):
             return
         self.worker = self.worker_pool[lang_pair]
         translation = self.worker.translate(self.args['source'])
+        # translation = self.worker.translate_multiline(self.args['source'])
         self.write(dict(translation=translation))
 
 
@@ -179,7 +221,20 @@ def make_app(args):
     return application
 
 
+class GracefulKiller:
+
+    def __init__(self):
+        signal.signal(signal.SIGINT, self.exit_gracefully)
+        signal.signal(signal.SIGTERM, self.exit_gracefully)
+
+    @staticmethod
+    def exit_gracefully(*args):
+        print("Exiting gracefully!")
+        sys.exit()
+
+
 if __name__ == "__main__":
+    killer = GracefulKiller()
     parser = argparse.ArgumentParser(
         description='Marian MT translation server.')
     parser.add_argument('-p', '--port', type=int, default=8888,
