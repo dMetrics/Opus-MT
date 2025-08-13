@@ -5,7 +5,5 @@ mosestokenizer==1.2.1
 pycld2==0.42
 sqlitedict==2.1.0
 sentencepiece==0.2.0
-tornado>=6.5
-setuptools>=78.1.1
 sacremoses
 fastBPE
